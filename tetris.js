@@ -1,11 +1,21 @@
 // tetris.js
 
-// ── SETUP ───────────────────────────────────────────────────────────────────────
-const canvas  = document.getElementById('tetris');
-const context = canvas.getContext('2d');
-context.scale(20, 20);  // each “block” is 20×20px
+// ── REFERENCES TO HTML ELEMENTS ────────────────────────────────────────────────
+const startScreen = document.getElementById('start-screen');
+const startButton = document.getElementById('start-button');
+const canvas      = document.getElementById('tetris');
+const context     = canvas.getContext('2d');
+context.scale(20, 20);  // each block is 20×20px
 
-// colors for each piece type (0 is empty)
+// ── GAME STATE AND FLAGS ──────────────────────────────────────────────────────
+let gameStarted  = false;
+let lastTime     = 0;
+let dropCounter  = 0;
+let dropInterval = 980; // ms per drop, will speed up
+let score        = 0;
+let lines        = 0;
+
+// ── COLORS FOR PIECES ─────────────────────────────────────────────────────────
 const colors = [
   null,
   '#FF0D72', // T
@@ -17,18 +27,19 @@ const colors = [
   '#3877FF', // O
 ];
 
-// the playfield matrix (rows × cols)
+// ── ARENA CREATION ────────────────────────────────────────────────────────────
 function createMatrix(w, h) {
-  const m = [];
+  const matrix = [];
   while (h--) {
-    m.push(new Array(w).fill(0));
+    matrix.push(new Array(w).fill(0));
   }
-  return m;
+  return matrix;
 }
 
+// Standard Tetris field: 10 cols × 20 rows
 let arena = createMatrix(15, 30);
 
-// ── PIECE FACTORY ────────────────────────────────────────────────────────────────
+// ── PIECE FACTORY ──────────────────────────────────────────────────────────────
 function createPiece(type) {
   switch (type) {
     case 'T': return [
@@ -69,15 +80,13 @@ function createPiece(type) {
   }
 }
 
-// ── COLLISION & MERGE ────────────────────────────────────────────────────────────
+// ── COLLISION CHECK ───────────────────────────────────────────────────────────
 function collide(arena, player) {
   const [m, o] = [player.matrix, player.pos];
   for (let y = 0; y < m.length; ++y) {
     for (let x = 0; x < m[y].length; ++x) {
-      if (
-        m[y][x] !== 0 &&
-        (arena[y + o.y] && arena[y + o.y][x + o.x]) !== 0
-      ) {
+      if (m[y][x] !== 0 &&
+         (arena[y + o.y] && arena[y + o.y][x + o.x]) !== 0) {
         return true;
       }
     }
@@ -85,6 +94,7 @@ function collide(arena, player) {
   return false;
 }
 
+// ── MERGE PIECE INTO ARENA ────────────────────────────────────────────────────
 function merge(arena, player) {
   player.matrix.forEach((row, y) => {
     row.forEach((value, x) => {
@@ -95,7 +105,7 @@ function merge(arena, player) {
   });
 }
 
-// ── LINE CLEAR ───────────────────────────────────────────────────────────────────
+// ── CLEAR FULL LINES ──────────────────────────────────────────────────────────
 function arenaSweep() {
   let rowCount = 0;
   outer: for (let y = arena.length - 1; y >= 0; --y) {
@@ -104,7 +114,7 @@ function arenaSweep() {
         continue outer;
       }
     }
-    // full row
+    // Row is full
     const row = arena.splice(y, 1)[0].fill(0);
     arena.unshift(row);
     ++y;
@@ -112,14 +122,13 @@ function arenaSweep() {
   }
   if (rowCount > 0) {
     lines += rowCount;
-    // scoring: e.g. 100 points per line
     score += rowCount * 100;
   }
 }
 
-// ── PLAYER SETUP ────────────────────────────────────────────────────────────────
+// ── PLAYER OBJECT ─────────────────────────────────────────────────────────────
 const player = {
-  pos:   { x: 0, y: 0 },
+  pos:    { x: 0, y: 0 },
   matrix: null,
 };
 
@@ -132,11 +141,10 @@ function playerReset() {
   player.pos.x = ((arena[0].length / 2) | 0) -
                  ((player.matrix[0].length / 2) | 0);
   if (collide(arena, player)) {
-    // game over
+    // Game over
     arena.forEach(row => row.fill(0));
-    updateCanvas(); // draw cleared field
+    updateCanvas();
     sendResultsToQualtrics(score, lines);
-    return;
   }
 }
 
@@ -151,7 +159,7 @@ function playerDrop() {
   }
 }
 
-// ── DRAWING ─────────────────────────────────────────────────────────────────────
+// ── DRAWING FUNCTIONS ─────────────────────────────────────────────────────────
 function drawMatrix(matrix, offset) {
   matrix.forEach((row, y) => {
     row.forEach((value, x) => {
@@ -165,19 +173,14 @@ function drawMatrix(matrix, offset) {
 
 function updateCanvas() {
   context.fillStyle = '#000';
-  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.fillRect(0, 0, canvas.width / 20, canvas.height / 20);
   drawMatrix(arena, { x: 0, y: 0 });
   drawMatrix(player.matrix, player.pos);
 }
 
-// ── GAME LOOP ──────────────────────────────────────────────────────────────────
-let dropCounter = 0;
-let dropInterval = 980;  // start at 980 ms per line
-let lastTime = 0;
-let score = 0;
-let lines = 0;
-
+// ── MAIN UPDATE LOOP ─────────────────────────────────────────────────────────
 function update(time = 0) {
+  if (!gameStarted) return;  // wait for start
   const deltaTime = time - lastTime;
   lastTime = time;
   dropCounter += deltaTime;
@@ -188,14 +191,14 @@ function update(time = 0) {
   requestAnimationFrame(update);
 }
 
-// ── SPEED INCREASE ──────────────────────────────────────────────────────────────
-// every 20 seconds, speed up by 33 ms, but never faster than ~100 ms
+// ── SPEED INCREASE EVERY 20s ─────────────────────────────────────────────────
 setInterval(() => {
   dropInterval = Math.max(100, dropInterval - 33);
 }, 20000);
 
-// ── INPUT HANDLING ──────────────────────────────────────────────────────────────
+// ── INPUT HANDLING ─────────────────────────────────────────────────────────────
 document.addEventListener('keydown', event => {
+  if (!gameStarted) return;
   if (event.key === 'ArrowLeft') {
     player.pos.x--;
     if (collide(arena, player)) player.pos.x++;
@@ -205,12 +208,11 @@ document.addEventListener('keydown', event => {
   } else if (event.key === 'ArrowDown') {
     playerDrop();
   } else if (event.key === ' ' || event.key === 'ArrowUp') {
-    // rotate
     rotate(player.matrix);
   }
 });
 
-// simple matrix rotation
+// ── PIECE ROTATION ─────────────────────────────────────────────────────────────
 function rotate(matrix) {
   for (let y = 0; y < matrix.length; ++y) {
     for (let x = 0; x < y; ++x) {
@@ -223,12 +225,17 @@ function rotate(matrix) {
 
 // ── COMMUNICATE WITH QUALTRICS ─────────────────────────────────────────────────
 function sendResultsToQualtrics(finalScore, totalLines) {
-  parent.postMessage(
-    { score: finalScore, lines: totalLines },
-    '*'
-  );
+  parent.postMessage({ score: finalScore, lines: totalLines }, '*');
 }
 
-// ── START THE GAME ───────────────────────────────────────────────────────────────
-playerReset();
-update();
+// ── START BUTTON HANDLING ─────────────────────────────────────────────────────
+startButton.addEventListener('click', () => {
+  gameStarted = true;
+  startScreen.style.display = 'none';
+  score = 0;
+  lines = 0;
+  arena = createMatrix(15, 30);
+  playerReset();
+  lastTime = performance.now();
+  update(lastTime);
+});
