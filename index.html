@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Qualtrics Tetris Task</title>
+  <style>
+    /* simple reset / center canvas */
+    body { display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+    canvas { background: #000; }
+  </style>
+</head>
+<body>
+
+  <!-- 1) the game canvas -->
+<canvas id="tetris" width="300" height="600"></canvas>
+  <!-- 2) include your Tetris game logic -->
+  <script src="tetris.js"></script>
+
+  <!-- 3) when the game ends, send results back to Qualtrics -->
+  <script>
+    /* 
+      In your tetris.js, after computing:
+         const finalScore = …;
+         const totalLines = …;
+      you would call postMessage like this:
+    */
+    function sendResultsToQualtrics(finalScore, totalLines) {
+      parent.postMessage(
+        { score: finalScore, lines: totalLines },
+        '*'  // or 'https://your-username.github.io'
+      );
+    }
+
+    // Example: hook into your game-over event:
+    // game.onGameOver = () => sendResultsToQualtrics(game.score, game.lines);
+  </script>
+
+</body>
+</html>
